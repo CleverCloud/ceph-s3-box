@@ -3,9 +3,6 @@ name: Release to DockerHub
 
 # Define when this workflow will run
 on:
-  pull_request:
-    branches:
-    - "**"
   push:
     branches:
     - "main"
