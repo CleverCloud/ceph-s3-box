@@ -35,6 +35,7 @@ ENV SECRET_KEY="radosgwadmin"
 ENV MGR_USERNAME="admin"
 ENV MGR_PASSWORD="admin"
 ENV MAIN="none"
+ENV FEATURES="radosgw rbd"
 
 EXPOSE 7480
 

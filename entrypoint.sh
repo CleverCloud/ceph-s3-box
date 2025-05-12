@@ -3,10 +3,16 @@
 set -eux
 set -o pipefail
 
-ZONE="$(hostname -s | grep -oP '^[a-z]+[0-9]+')"
-ZONE_GROUP="$(hostname -d | grep -oP '^[a-z0-9]+')"
-REALM="$(hostname -d | grep -oP '^[a-z0-9]+')"
-DOMAIN="$(hostname -d)"
+#ZONE="$(hostname -s | grep -oP '^[a-z]+[0-9]+')"
+#ZONE_GROUP="$(hostname -d | grep -oP '^[a-z0-9]+')"
+#REALM="$(hostname -d | grep -oP '^[a-z0-9]+')"
+#DOMAIN="$(hostname -d)"
+
+ZONE="default"
+ZONE_GROUP="default-group"
+REALM="default-realm"
+DOMAIN="ceph.local"
+
 
 ##
 # create ceph.conf
@@ -90,185 +96,215 @@ ceph-osd -i "${OSD}" --mkfs --osd-data "/osd/osd.${OSD}/data"
 chown -R ceph:ceph "/osd/osd.${OSD}/data"
 ceph-osd -i "${OSD}" --osd-data "/osd/osd.${OSD}/data" --keyring "/osd/osd.${OSD}/data/keyring"
 
-##
-# create rgw
-##
-echo "create ceph rgw"
 
-mkdir -p "/var/lib/ceph/radosgw/ceph-rgw.$(hostname -s)"
-ceph auth get-or-create "client.rgw.$(hostname -s)" osd 'allow rwx' mon 'allow rw' \
-    -o "/var/lib/ceph/radosgw/ceph-rgw.$(hostname -s)/keyring"
-touch "/var/lib/ceph/radosgw/ceph-rgw.$(hostname -s)/done"
-chown -R ceph:ceph /var/lib/ceph/radosgw
+if [[ " $FEATURES " == *" radosgw "* ]]; then
+  ##
+  # create rgw
+  ##
+  echo "create ceph rgw"
 
-if [ "${MAIN}" == "none" ]; then
-    echo "create admin-user"
-    radosgw-admin user create \
-        --uid=".admin" \
-        --display-name="admin" \
-        --system \
-        --key-type="s3" \
-        --access-key="${ACCESS_KEY}" \
-        --secret-key="${SECRET_KEY}"
+  mkdir -p "/var/lib/ceph/radosgw/ceph-rgw.$(hostname -s)"
+  ceph auth get-or-create "client.rgw.$(hostname -s)" osd 'allow rwx' mon 'allow rw' \
+      -o "/var/lib/ceph/radosgw/ceph-rgw.$(hostname -s)/keyring"
+  touch "/var/lib/ceph/radosgw/ceph-rgw.$(hostname -s)/done"
+  chown -R ceph:ceph /var/lib/ceph/radosgw
 
-    ceph config set global rgw_enable_usage_log true
-    ceph config set global rgw_dns_name "$(hostname -s)"
+  if [ "${MAIN}" == "none" ]; then
+      echo "create admin-user"
+      radosgw-admin user create \
+          --uid=".admin" \
+          --display-name="admin" \
+          --system \
+          --key-type="s3" \
+          --access-key="${ACCESS_KEY}" \
+          --secret-key="${SECRET_KEY}"
 
-    radosgw --cluster ceph --rgw-zone "default" --name "client.rgw.$(hostname -s)" --setuser ceph --setgroup ceph
+      ceph config set global rgw_enable_usage_log true
+      ceph config set global rgw_dns_name "$(hostname -s)"
+
+      radosgw --cluster ceph --rgw-zone "default" --name "client.rgw.$(hostname -s)" --setuser ceph --setgroup ceph
+  fi
+
+  if [ "${MAIN}" == "yes" ]; then
+      echo "create realm ${REALM}"
+      radosgw-admin realm create \
+          --rgw-realm="${REALM}" \
+          --default
+
+      echo "create zonegroup ${ZONE_GROUP}"
+      radosgw-admin zonegroup create \
+          --rgw-realm="${REALM}" \
+          --rgw-zonegroup="${ZONE_GROUP}" \
+          --endpoints="http://${DOMAIN}:7480" \
+          --master \
+          --default
+
+      radosgw-admin zonegroup get --rgw-zonegroup="${ZONE_GROUP}" | \
+          jq \
+              --arg domain "${DOMAIN}" \
+              --arg zone1 "dev1-${DOMAIN}" \
+              --arg zone2 "dev2-${DOMAIN}" \
+              '.hostnames |= [$domain, $zone1, $zone2]' | \
+          radosgw-admin zonegroup set --rgw-zonegroup="${ZONE_GROUP}" -i -
+
+      echo "create zone ${ZONE}"
+      radosgw-admin zone create \
+          --rgw-zonegroup="${ZONE_GROUP}" \
+          --rgw-zone="${ZONE}" \
+          --endpoints="http://${ZONE}-${DOMAIN}:7480" \
+          --master \
+          --default
+
+      echo "create placement PREMIUM"
+      radosgw-admin zonegroup placement add \
+          --rgw-zonegroup="${ZONE_GROUP}" \
+          --placement-id="default-placement" \
+          --storage-class="PREMIUM"
+
+      echo "create placement ARCHIVE"
+      radosgw-admin zonegroup placement add \
+          --rgw-zonegroup="${ZONE_GROUP}" \
+          --placement-id="default-placement" \
+          --storage-class="ARCHIVE"
+
+      echo "create synchronization-user"
+      radosgw-admin user create \
+          --uid=".synchronization" \
+          --display-name="synchronization-user" \
+          --system \
+          --key-type="s3" \
+          --access-key="${ACCESS_KEY}" \
+          --secret-key="${SECRET_KEY}"
+
+      echo "add synchronization-user to zone ${ZONE}"
+      radosgw-admin zone modify \
+          --rgw-zone="${ZONE}" \
+          --access-key="${ACCESS_KEY}" \
+          --secret-key="${SECRET_KEY}"
+
+      ##
+      # disable the defaut sync of buckets between zones,
+      # but allow specific ones to replicate
+      ##
+      radosgw-admin sync group create \
+          --group-id=group-main \
+          --status=allowed
+      radosgw-admin sync group flow create \
+          --group-id=group-main \
+          --flow-id=flow-main \
+          --flow-type=symmetrical \
+          --zones=dev1,dev2
+      radosgw-admin sync group pipe create \
+          --group-id=group-main \
+          --pipe-id=pipe-main \
+          --source-zones='*' \
+          --source-bucket='*' \
+          --dest-zones='*' \
+          --dest-bucket='*'
+
+      ##
+      # enable mirroring for a specific bucket between zones
+      ##
+      # radosgw-admin sync group create \
+      #     --bucket=test1 \
+      #     --group-id=group-test1 \
+      #     --status=enabled
+      # radosgw-admin sync group pipe create \
+      #     --bucket=test1 \
+      #     --group-id=group-test1 \
+      #     --pipe-id=pipe-test1 \
+      #     --source-zones='*' \
+      #     --source-bucket='*' \
+      #     --dest-zones='*' \
+      #     --dest-bucket='*'
+
+      echo "create objstorage-admin user"
+      radosgw-admin user create \
+          --uid=".objstorage-admin" \
+          --display-name=".objstorage-admin" \
+          --system \
+          --admin
+
+      radosgw-admin period update \
+          --commit
+  fi
+
+  if [ "${MAIN}" == "no" ]; then
+      echo "get realm http://${DOMAIN}:7480"
+      while ! radosgw-admin realm pull \
+          --url="http://${DOMAIN}:7480" \
+          --access-key="${ACCESS_KEY}" \
+          --secret="${SECRET_KEY}"; do sleep 0.5; done
+
+      echo "set default realm to ${ZONE_GROUP}"
+      radosgw-admin realm default \
+          --rgw-realm="${ZONE_GROUP}"
+
+      echo "create zone ${ZONE}"
+      radosgw-admin zone create \
+          --rgw-zonegroup="${ZONE_GROUP}" \
+          --rgw-zone="${ZONE}" \
+          --access-key="${ACCESS_KEY}" \
+          --secret-key="${SECRET_KEY}" \
+          --endpoints="http://${ZONE}-${DOMAIN}:7480" \
+          --default
+  fi
+
+  if [ "${MAIN}" == "yes" ] || [ "${MAIN}" == "no" ]; then
+      echo "create placement PREMIUM for ${ZONE}"
+      radosgw-admin zone placement add \
+          --rgw-zone="${ZONE}" \
+          --placement-id="default-placement" \
+          --storage-class="PREMIUM" \
+          --data-pool "${ZONE}.rgw.buckets.premium.data"
+
+      echo "create placement STANDARD for ${ZONE}"
+      radosgw-admin zone placement add \
+          --rgw-zone="${ZONE}" \
+          --placement-id="default-placement" \
+          --storage-class="STANDARD" \
+          --data-pool "${ZONE}.rgw.buckets.standard.data"
+
+      echo "create placement ARCIVE for ${ZONE}"
+      radosgw-admin zone placement add \
+          --rgw-zone="${ZONE}" \
+          --placement-id="default-placement" \
+          --storage-class="ARCHIVE" \
+          --data-pool "${ZONE}.rgw.buckets.archive.data" \
+          --compression lz4
+
+      radosgw-admin period update --commit
+
+      ceph config set global rgw_enable_usage_log true
+      radosgw --cluster ceph --rgw-zone "${ZONE}" --name "client.rgw.$(hostname -s)" --setuser ceph --setgroup ceph
+  fi
 fi
 
-if [ "${MAIN}" == "yes" ]; then
-    echo "create realm ${REALM}"
-    radosgw-admin realm create \
-        --rgw-realm="${REALM}" \
-        --default
+if [[ " $FEATURES " == *" rbd "* ]]; then
+  ##
+  # create rbd
+  ##
+  echo "create ceph rbd"
 
-    echo "create zonegroup ${ZONE_GROUP}"
-    radosgw-admin zonegroup create \
-        --rgw-realm="${REALM}" \
-        --rgw-zonegroup="${ZONE_GROUP}" \
-        --endpoints="http://${DOMAIN}:7480" \
-        --master \
-        --default
+  # Create the rbd pool if it does not exist
+  if ! ceph osd pool ls | grep -q '^rbd$'; then
+      ceph osd pool create rbd 8 8 # 8 = number of placement groups (PGs), 8 = number of placement group for placement (PGP)
+      ceph osd pool application enable rbd rbd # 1st rbd is the pool name, 2nd is the ceph "app" name (can be rbd, cephfs, rgw)
+  fi
 
-    radosgw-admin zonegroup get --rgw-zonegroup="${ZONE_GROUP}" | \
-        jq \
-            --arg domain "${DOMAIN}" \
-            --arg zone1 "dev1-${DOMAIN}" \
-            --arg zone2 "dev2-${DOMAIN}" \
-            '.hostnames |= [$domain, $zone1, $zone2]' | \
-        radosgw-admin zonegroup set --rgw-zonegroup="${ZONE_GROUP}" -i -
+  # Create rbd user and keyring
+  if ! ceph auth get client.rbd 2>/dev/null; then
+      ceph auth get-or-create client.rbd mon 'profile rbd' osd 'profile rbd pool=rbd' > /etc/ceph/ceph.client.rbd.keyring
+  fi
 
-    echo "create zone ${ZONE}"
-    radosgw-admin zone create \
-        --rgw-zonegroup="${ZONE_GROUP}" \
-        --rgw-zone="${ZONE}" \
-        --endpoints="http://${ZONE}-${DOMAIN}:7480" \
-        --master \
-        --default
+  # Set permissions for rbd user
+  ceph auth caps client.rbd mon 'profile rbd' osd 'profile rbd pool=rbd'
 
-    echo "create placement PREMIUM"
-    radosgw-admin zonegroup placement add \
-        --rgw-zonegroup="${ZONE_GROUP}" \
-        --placement-id="default-placement" \
-        --storage-class="PREMIUM"
+  # Enable RBD mirroring if needed (optional)
+  # ceph osd pool application enable rbd rbd
+  # ceph osd pool set rbd size 2
 
-    echo "create placement ARCHIVE"
-    radosgw-admin zonegroup placement add \
-        --rgw-zonegroup="${ZONE_GROUP}" \
-        --placement-id="default-placement" \
-        --storage-class="ARCHIVE"
-
-    echo "create synchronization-user"
-    radosgw-admin user create \
-        --uid=".synchronization" \
-        --display-name="synchronization-user" \
-        --system \
-        --key-type="s3" \
-        --access-key="${ACCESS_KEY}" \
-        --secret-key="${SECRET_KEY}"
-
-    echo "add synchronization-user to zone ${ZONE}"    
-    radosgw-admin zone modify \
-        --rgw-zone="${ZONE}" \
-        --access-key="${ACCESS_KEY}" \
-        --secret-key="${SECRET_KEY}"
-
-    ##
-    # disable the defaut sync of buckets between zones, 
-    # but allow specific ones to replicate
-    ##
-    radosgw-admin sync group create \
-        --group-id=group-main \
-        --status=allowed
-    radosgw-admin sync group flow create \
-        --group-id=group-main \
-        --flow-id=flow-main \
-        --flow-type=symmetrical \
-        --zones=dev1,dev2
-    radosgw-admin sync group pipe create \
-        --group-id=group-main \
-        --pipe-id=pipe-main \
-        --source-zones='*' \
-        --source-bucket='*' \
-        --dest-zones='*' \
-        --dest-bucket='*'
-
-    ##
-    # enable mirroring for a specific bucket between zones
-    ##                      
-    # radosgw-admin sync group create \
-    #     --bucket=test1 \
-    #     --group-id=group-test1 \
-    #     --status=enabled
-    # radosgw-admin sync group pipe create \
-    #     --bucket=test1 \
-    #     --group-id=group-test1 \
-    #     --pipe-id=pipe-test1 \
-    #     --source-zones='*' \
-    #     --source-bucket='*' \
-    #     --dest-zones='*' \
-    #     --dest-bucket='*'
-
-    echo "create objstorage-admin user"
-    radosgw-admin user create \
-        --uid=".objstorage-admin" \
-        --display-name=".objstorage-admin" \
-        --system \
-        --admin 
-
-    radosgw-admin period update \
-        --commit
-fi
-
-if [ "${MAIN}" == "no" ]; then
-    echo "get realm http://${DOMAIN}:7480"
-    while ! radosgw-admin realm pull \
-        --url="http://${DOMAIN}:7480" \
-        --access-key="${ACCESS_KEY}" \
-        --secret="${SECRET_KEY}"; do sleep 0.5; done
-
-    echo "set default realm to ${ZONE_GROUP}"
-    radosgw-admin realm default \
-        --rgw-realm="${ZONE_GROUP}"
-
-    echo "create zone ${ZONE}"
-    radosgw-admin zone create \
-        --rgw-zonegroup="${ZONE_GROUP}" \
-        --rgw-zone="${ZONE}" \
-        --access-key="${ACCESS_KEY}" \
-        --secret-key="${SECRET_KEY}" \
-        --endpoints="http://${ZONE}-${DOMAIN}:7480" \
-        --default
-fi
-
-if [ "${MAIN}" == "yes" ] || [ "${MAIN}" == "no" ]; then
-    echo "create placement PREMIUM for ${ZONE}"
-    radosgw-admin zone placement add \
-        --rgw-zone="${ZONE}" \
-        --placement-id="default-placement" \
-        --storage-class="PREMIUM" \
-        --data-pool "${ZONE}.rgw.buckets.premium.data"
-
-    echo "create placement STANDARD for ${ZONE}"
-    radosgw-admin zone placement add \
-        --rgw-zone="${ZONE}" \
-        --placement-id="default-placement" \
-        --storage-class="STANDARD" \
-        --data-pool "${ZONE}.rgw.buckets.standard.data"
-
-    echo "create placement ARCIVE for ${ZONE}"
-    radosgw-admin zone placement add \
-        --rgw-zone="${ZONE}" \
-        --placement-id="default-placement" \
-        --storage-class="ARCHIVE" \
-        --data-pool "${ZONE}.rgw.buckets.archive.data" \
-        --compression lz4
-
-    radosgw-admin period update --commit
-
-    ceph config set global rgw_enable_usage_log true
-    radosgw --cluster ceph --rgw-zone "${ZONE}" --name "client.rgw.$(hostname -s)" --setuser ceph --setgroup ceph
+  echo "rbd pool and user configured"
 fi
 
 # Configure Cluster
@@ -278,7 +314,8 @@ ceph mgr module enable diskprediction_local --force
 ceph mgr module enable stats --force
 ceph mgr module disable nfs
 ceph config set mgr mgr/dashboard/ssl false --force
-ceph dashboard feature disable rbd cephfs nfs iscsi mirroring
+# ceph dashboard feature disable rbd cephfs nfs iscsi mirroring
+ceph dashboard feature disable cephfs nfs iscsi mirroring
 echo "${MGR_PASSWORD}" | ceph dashboard ac-user-create "${MGR_USERNAME}" -i - administrator --force-password
 echo "${ACCESS_KEY}" | ceph dashboard set-rgw-api-access-key -i -
 echo "${SECRET_KEY}" | ceph dashboard set-rgw-api-secret-key -i -
