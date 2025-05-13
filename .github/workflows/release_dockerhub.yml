@@ -3,12 +3,8 @@ name: Release to DockerHub
 
 # Define when this workflow will run
 on:
-  push:
-    branches:
-    - "main"
-  schedule:
-    # Run every day at 8:00 AM UTC
-    - cron: '0 8 * * *'
+  release:
+    types: [published]
 
 # Prevent multiple workflows running at the same time
 concurrency:
@@ -32,15 +28,6 @@ jobs:
         with:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}
-      - name: Get current date
-        id: date
-        run: echo "date=$(date +'%Y%m%d.%H.%M')" >> $GITHUB_OUTPUT
-      - name: Get current date only the day
-        id: day
-        run: echo "day=$(date +'%Y%m%d')" >> $GITHUB_OUTPUT
-      - name: Get current date only the month
-        id: month
-        run: echo "month=$(date +'%Y%m')" >> $GITHUB_OUTPUT
 
       # Set up Docker layer caching
       - name: Set up Docker cache
@@ -58,38 +45,7 @@ jobs:
           context: .
           push: 'true'
           platforms: linux/amd64
-          tags: clevercloud/testcontainer-ceph:${{ steps.date.outputs.date }}
-          cache-from: type=local,src=/tmp/.buildx-cache
-          cache-to: type=local,dest=/tmp/.buildx-cache-new,mode=max
-
-      - name: Build and push tagged image
-        uses: docker/build-push-action@v6
-        with:
-          context: .
-          push: 'true'
-          platforms: linux/amd64
-          tags: clevercloud/testcontainer-ceph:${{ steps.day.outputs.day }}
-          cache-from: type=local,src=/tmp/.buildx-cache
-          cache-to: type=local,dest=/tmp/.buildx-cache-new,mode=max
-
-      - name: Build and push tagged image
-        uses: docker/build-push-action@v6
-        with:
-          context: .
-          push: 'true'
-          platforms: linux/amd64
-          tags: clevercloud/testcontainer-ceph:${{ steps.month.outputs.month }}
-          cache-from: type=local,src=/tmp/.buildx-cache
-          cache-to: type=local,dest=/tmp/.buildx-cache-new,mode=max
-
-      - name: Build and push latest image (main branch only)
-        uses: docker/build-push-action@v6
-        if: ${{ github.ref == 'refs/heads/main' }}
-        with:
-          context: .
-          push: 'true'
-          platforms: linux/amd64
-          tags: clevercloud/testcontainer-ceph:latest
+          tags: clevercloud/testcontainer-ceph:{{ github.event.release.tag_name }}
           cache-from: type=local,src=/tmp/.buildx-cache
           cache-to: type=local,dest=/tmp/.buildx-cache-new,mode=max
 

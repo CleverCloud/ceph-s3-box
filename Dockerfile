@@ -1,11 +1,8 @@
 # syntax=docker/dockerfile:1
-# Valid combinations:
-#   reef    + 22.04 (default)
-#   pacific + 20.04 (use --build-arg UBUNTU_VERSION=20.04 --build-arg VERSION_NAME=pacific)
 ARG IMAGE_PROXY=""
 ARG DEBIAN_FRONTEND=noninteractive
-ARG UBUNTU_VERSION="22.04"
-ARG VERSION_NAME="reef"
+ARG UBUNTU_VERSION="20.04"
+ARG VERSION_NAME="pacific"
 
 FROM ${IMAGE_PROXY}ubuntu:${UBUNTU_VERSION} AS ceph
 ENV TZ=Etc/UTC
@@ -13,13 +10,6 @@ ARG VERSION_NAME
 ARG UBUNTU_VERSION
 ENV UBUNTU_VERSION=${UBUNTU_VERSION}
 ENV VERSION_NAME=${VERSION_NAME}
-
-# Validate Ceph/Ubuntu version combinations
-RUN if [ "$VERSION_NAME" = "pacific" ] && [ "$UBUNTU_VERSION" != "20.04" ]; then \
-    echo "ERROR: Ceph 'pacific' is only supported on Ubuntu 20.04" >&2; exit 1; \
-    elif [ "$VERSION_NAME" = "reef" ] && [ "$UBUNTU_VERSION" != "22.04" ]; then \
-    echo "ERROR: Ceph 'reef' is only supported on Ubuntu 22.04" >&2; exit 1; \
-    fi
 
 RUN apt -y update && apt -y install \
     lsb-release \
