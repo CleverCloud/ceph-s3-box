@@ -1,8 +1,8 @@
 # syntax=docker/dockerfile:1
 ARG IMAGE_PROXY=""
 ARG DEBIAN_FRONTEND=noninteractive
-ARG UBUNTU_VERSION="22.04"
-ARG VERSION_NAME="reef"
+ARG UBUNTU_VERSION="20.04"
+ARG VERSION_NAME="pacific"
 
 FROM ${IMAGE_PROXY}ubuntu:${UBUNTU_VERSION} AS ceph
 ENV TZ=Etc/UTC
