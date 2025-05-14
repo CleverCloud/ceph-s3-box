@@ -69,6 +69,7 @@ mkdir -p "/var/lib/ceph/mon/ceph-$(hostname -s)"
 rm -rf "/var/lib/ceph/mon/ceph-$(hostname -s)/*"
 ceph-mon --mkfs -i "$(hostname -s)" --monmap /tmp/monmap --keyring /tmp/ceph.mon.keyring
 chown -R ceph:ceph /var/lib/ceph/mon/
+mkdir -p "/var/run/ceph"
 ceph-mon --cluster ceph --id "$(hostname -s)" --setuser ceph --setgroup ceph
 ceph config set global auth_allow_insecure_global_id_reclaim false
 
@@ -322,14 +323,18 @@ echo "${SECRET_KEY}" | ceph dashboard set-rgw-api-secret-key -i -
 ceph dashboard set-rgw-api-ssl-verify False
 
 # Test API
-curl -X 'POST' \
+response_code=$(curl -s -o /dev/null -w "%{http_code}" -X 'POST' \
   'http://127.0.0.1:8080/api/auth' \
   -H 'accept: application/vnd.ceph.api.v1.0+json' \
   -H 'Content-Type: application/json' \
   -d "{
   \"username\": \"${MGR_USERNAME}\",
   \"password\": \"${MGR_PASSWORD}\"
-}"
+}")
+
+if [ "$response_code" -eq 201 ]; then
+  echo "Dashboard API is working"
+fi
 
 ##
 # log output in forground
