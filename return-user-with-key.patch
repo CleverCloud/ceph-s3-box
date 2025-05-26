@@ -1,0 +1,18 @@
+diff --git a/src/pybind/mgr/dashboard/controllers/ceph_users.py b/src/pybind/mgr/dashboard/controllers/ceph_users.py
+index 022f8f36c42..8619e4e257c 100644
+--- a/src/pybind/mgr/dashboard/controllers/ceph_users.py
++++ b/src/pybind/mgr/dashboard/controllers/ceph_users.py
+@@ -65,11 +65,9 @@ class CephUserEndpoints:
+             caps.append(cap['entity'])
+             caps.append(cap['cap'])
+ 
+-        logger.debug("Sending command 'auth add' of entity '%s' with caps '%s'",
++        logger.debug("Sending command 'auth get-or-create' of entity '%s' with caps '%s'",
+                      user_entity, str(caps))
+-        CephUserEndpoints._run_auth_command('auth add', entity=user_entity, caps=caps)
+-
+-        return f"Successfully created user '{user_entity}'"
++        return CephUserEndpoints._run_auth_command('auth get-or-create', entity=user_entity, caps=caps)
+ 
+     @staticmethod
+     def user_delete(_, user_entity: str):

@@ -1,8 +1,8 @@
 # syntax=docker/dockerfile:1
 ARG IMAGE_PROXY=""
 ARG DEBIAN_FRONTEND=noninteractive
-ARG UBUNTU_VERSION="20.04"
-ARG VERSION_NAME="pacific"
+ARG UBUNTU_VERSION="22.04"
+ARG VERSION_NAME="reef"
 
 FROM ${IMAGE_PROXY}ubuntu:${UBUNTU_VERSION} AS ceph
 ENV TZ=Etc/UTC
@@ -21,7 +21,8 @@ RUN apt -y update && apt -y install \
     dnsutils \
     iputils-ping \
     iproute2 \
-    jq
+    jq \
+    patch
 
 RUN wget \
     -q \
@@ -48,6 +49,9 @@ ENV FEATURES="radosgw rbd"
 
 EXPOSE 7480
 EXPOSE 8080
+
+COPY ./return-user-with-key.patch /return-user-with-key.patch
+RUN patch /usr/share/ceph/mgr/dashboard/controllers/ceph_users.py < /return-user-with-key.patch
 
 COPY ./entrypoint.sh /entrypoint
 ENTRYPOINT /entrypoint
