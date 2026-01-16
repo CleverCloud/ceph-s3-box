@@ -98,6 +98,7 @@ podman run \
 | SECRET_KEY   | Set to "radosgwadmin" by default.             |
 | MGR_USERNAME | Set zo "admin" by default.                    |
 | MGR_PASSWORD | Set to radosgwadmin" by default.              |
+| RADOSGW_DNS  | Custom DNS name for RadosGW. Defaults to container hostname if not set. |
 
 ## Exposed Ports
 
