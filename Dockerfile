@@ -4,8 +4,8 @@ ARG DEBIAN_FRONTEND=noninteractive
 ARG UBUNTU_VERSION="22.04"
 ARG VERSION_NAME="reef"
 
-LABEL "com.clever-cloud"="Clever Cloud"
 FROM ${IMAGE_PROXY}ubuntu:${UBUNTU_VERSION} AS ceph
+LABEL "com.clever-cloud"="Clever Cloud"
 ENV TZ=Etc/UTC
 ARG VERSION_NAME
 ARG UBUNTU_VERSION
