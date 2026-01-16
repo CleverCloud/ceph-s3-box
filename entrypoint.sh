@@ -13,8 +13,6 @@ ZONE_GROUP="default-group"
 REALM="default-realm"
 DOMAIN="ceph.local"
 
-
-##
 # create ceph.conf
 ##
 echo "create ceph.conf"
@@ -121,7 +119,8 @@ if [[ " $FEATURES " == *" radosgw "* ]]; then
           --secret-key="${SECRET_KEY}"
 
       ceph config set global rgw_enable_usage_log true
-      ceph config set global rgw_dns_name "$(hostname -s)"
+      # Use RADOSGW_DNS environment variable if set, otherwise default to hostname
+      ceph config set global rgw_dns_name "${RADOSGW_DNS:-$(hostname -s)}"
 
       radosgw --cluster ceph --rgw-zone "default" --name "client.rgw.$(hostname -s)" --setuser ceph --setgroup ceph
   fi
