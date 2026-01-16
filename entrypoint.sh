@@ -121,6 +121,7 @@ if [[ " $FEATURES " == *" radosgw "* ]]; then
       ceph config set global rgw_enable_usage_log true
       # Use RADOSGW_DNS environment variable if set, otherwise default to hostname
       ceph config set global rgw_dns_name "${RADOSGW_DNS:-$(hostname -s)}"
+      ceph config set client.rgw rgw_usage_log_tick_interval 1
 
       radosgw --cluster ceph --rgw-zone "default" --name "client.rgw.$(hostname -s)" --setuser ceph --setgroup ceph
   fi
