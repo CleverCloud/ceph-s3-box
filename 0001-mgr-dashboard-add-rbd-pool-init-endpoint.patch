@@ -1,5 +1,15 @@
+From cfe044386b2e084ed49cf27617a47bce8567bef5 Mon Sep 17 00:00:00 2001
+From: kannar <kannarfr@gmail.com>
+Date: Mon, 20 Apr 2026 00:49:26 +0200
+Subject: [PATCH] mgr/dashboard: add rbd pool init endpoint
+
+---
+ src/pybind/mgr/dashboard/controllers/pool.py | 17 +++++++++++++++--
+ src/pybind/mgr/dashboard/services/rbd.py     |  4 ++++
+ 2 files changed, 19 insertions(+), 2 deletions(-)
+
 diff --git a/src/pybind/mgr/dashboard/controllers/pool.py b/src/pybind/mgr/dashboard/controllers/pool.py
-index ab931971227..2b74d7afd7b 100644
+index 9310d2f97aa..ae53be0e928 100644
 --- a/src/pybind/mgr/dashboard/controllers/pool.py
 +++ b/src/pybind/mgr/dashboard/controllers/pool.py
 @@ -9,8 +9,9 @@ import cherrypy
@@ -7,14 +17,14 @@ index ab931971227..2b74d7afd7b 100644
  from ..security import Scope
  from ..services.ceph_service import CephService
 -from ..services.exception import handle_send_command_error
--from ..services.rbd import RbdConfiguration, RbdMirroringService
+-from ..services.rbd import RbdConfiguration
 +from ..services.exception import handle_rados_error, handle_rbd_error, \
 +    handle_send_command_error
-+from ..services.rbd import RbdConfiguration, RbdMirroringService, RbdService
++from ..services.rbd import RbdConfiguration, RbdService
  from ..tools import TaskManager, str_to_bool
  from . import APIDoc, APIRouter, Endpoint, EndpointDoc, ReadPermission, \
      RESTController, Task, UIRouter
-@@ -317,6 +318,18 @@ class Pool(RESTController):
+@@ -295,6 +296,18 @@ class Pool(RESTController):
      def configuration(self, pool_name):
          return RbdConfiguration(pool_name).list()
  
@@ -34,7 +44,7 @@ index ab931971227..2b74d7afd7b 100644
  @UIRouter('/pool', Scope.POOL)
  @APIDoc("Dashboard UI helper function; not part of the public API", "PoolUi")
 diff --git a/src/pybind/mgr/dashboard/services/rbd.py b/src/pybind/mgr/dashboard/services/rbd.py
-index 41e73983bc1..da42f8f0504 100644
+index 2a72b10d9a9..e50e997c4a8 100644
 --- a/src/pybind/mgr/dashboard/services/rbd.py
 +++ b/src/pybind/mgr/dashboard/services/rbd.py
 @@ -275,6 +275,10 @@ class RbdService(object):
@@ -48,3 +58,6 @@ index 41e73983bc1..da42f8f0504 100644
      @classmethod
      def _rbd_disk_usage(cls, image, snaps, whole_object=True):
          class DUCallback(object):
+-- 
+2.53.0
+
