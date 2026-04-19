@@ -54,5 +54,8 @@ EXPOSE 8080
 COPY ./return-user-with-key.patch /return-user-with-key.patch
 RUN patch /usr/share/ceph/mgr/dashboard/controllers/ceph_users.py < /return-user-with-key.patch
 
+COPY ./0001-mgr-dashboard-add-rbd-pool-init-endpoint.patch /0001-mgr-dashboard-add-rbd-pool-init-endpoint.patch
+RUN patch -p5 -d /usr/share/ceph/mgr/dashboard < /0001-mgr-dashboard-add-rbd-pool-init-endpoint.patch
+
 COPY ./entrypoint.sh /entrypoint
 ENTRYPOINT /entrypoint
