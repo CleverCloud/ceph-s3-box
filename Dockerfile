@@ -52,7 +52,13 @@ EXPOSE 7480
 EXPOSE 8080
 
 COPY ./return-user-with-key.patch /return-user-with-key.patch
-RUN patch /usr/share/ceph/mgr/dashboard/controllers/ceph_users.py < /return-user-with-key.patch
+# ceph_users.py controller was added post-pacific; skip the patch where the file is absent.
+RUN target=/usr/share/ceph/mgr/dashboard/controllers/ceph_users.py; \
+    if [ -f "$target" ]; then \
+      patch "$target" < /return-user-with-key.patch; \
+    else \
+      echo "skipping return-user-with-key.patch: $target not present in ${VERSION_NAME}"; \
+    fi
 
 COPY ./0001-mgr-dashboard-add-rbd-pool-init-endpoint.patch /0001-mgr-dashboard-add-rbd-pool-init-endpoint.patch
 RUN patch -p5 -d /usr/share/ceph/mgr/dashboard < /0001-mgr-dashboard-add-rbd-pool-init-endpoint.patch
