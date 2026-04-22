@@ -51,17 +51,16 @@ ENV FEATURES="radosgw rbd"
 EXPOSE 7480
 EXPOSE 8080
 
-COPY ./return-user-with-key.patch /return-user-with-key.patch
-# ceph_users.py controller was added post-pacific; skip the patch where the file is absent.
-RUN target=/usr/share/ceph/mgr/dashboard/controllers/ceph_users.py; \
-    if [ -f "$target" ]; then \
-      patch "$target" < /return-user-with-key.patch; \
-    else \
-      echo "skipping return-user-with-key.patch: $target not present in ${VERSION_NAME}"; \
-    fi
-
-COPY ./0001-mgr-dashboard-add-rbd-pool-init-endpoint.patch /0001-mgr-dashboard-add-rbd-pool-init-endpoint.patch
-RUN patch -p5 -d /usr/share/ceph/mgr/dashboard < /0001-mgr-dashboard-add-rbd-pool-init-endpoint.patch
+COPY ./patches /patches
+# Apply common patches, then the version-specific ones (reef/ or pacific/).
+RUN set -e; \
+    for d in /patches/common /patches/${VERSION_NAME}; do \
+      for p in "$d"/*.patch; do \
+        [ -e "$p" ] || continue; \
+        echo "Applying $p"; \
+        patch -p5 -d /usr/share/ceph/mgr/dashboard < "$p"; \
+      done; \
+    done
 
 COPY ./entrypoint.sh /entrypoint
 ENTRYPOINT /entrypoint
