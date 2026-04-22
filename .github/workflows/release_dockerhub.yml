@@ -12,12 +12,25 @@ concurrency:
   cancel-in-progress: true
 jobs:
   docker-build-and-push:
-    name: Docker build and push
+    name: Docker build and push (${{ matrix.version_name }})
     runs-on: ubuntu-latest
     timeout-minutes: 180
+    strategy:
+      fail-fast: false
+      matrix:
+        version_name: [pacific, reef]
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
+
+      - name: Validate release tag
+        run: |
+          tag="${{ github.event.release.tag_name }}"
+          if ! [[ "$tag" =~ ^[0-9]{8}(\.[0-9]+)?$ ]]; then
+            echo "::error::release tag '$tag' must be YYYYMMDD or YYYYMMDD.N"
+            exit 1
+          fi
+
       - name: Set up QEMU
         uses: docker/setup-qemu-action@v3
       - name: Set up Docker Buildx
@@ -29,14 +42,14 @@ jobs:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}
 
-      # Set up Docker layer caching
+      # Set up Docker layer caching (scoped per Ceph version — base layers differ)
       - name: Set up Docker cache
         uses: actions/cache@v3
         with:
           path: /tmp/.buildx-cache
-          key: ${{ runner.os }}-buildx-${{ github.sha }}
+          key: ${{ runner.os }}-buildx-${{ matrix.version_name }}-${{ github.sha }}
           restore-keys: |
-            ${{ runner.os }}-buildx-
+            ${{ runner.os }}-buildx-${{ matrix.version_name }}-
 
       # Build and push the image
       - name: Build and push tagged image
@@ -45,7 +58,9 @@ jobs:
           context: .
           push: 'true'
           platforms: linux/amd64
-          tags: clevercloud/testcontainer-ceph:${{ github.event.release.tag_name }}
+          build-args: |
+            VERSION_NAME=${{ matrix.version_name }}
+          tags: clevercloud/testcontainer-ceph:${{ matrix.version_name }}-${{ github.event.release.tag_name }}
           cache-from: type=local,src=/tmp/.buildx-cache
           cache-to: type=local,dest=/tmp/.buildx-cache-new,mode=max
 
