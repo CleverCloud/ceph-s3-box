@@ -18,7 +18,13 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        version_name: [pacific, reef]
+        # pacific has no jammy packages on download.ceph.com; pin each track to
+        # the newest Ubuntu release its upstream apt repo still supports.
+        include:
+          - version_name: pacific
+            ubuntu_version: "20.04"
+          - version_name: reef
+            ubuntu_version: "22.04"
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -60,6 +66,7 @@ jobs:
           platforms: linux/amd64
           build-args: |
             VERSION_NAME=${{ matrix.version_name }}
+            UBUNTU_VERSION=${{ matrix.ubuntu_version }}
           tags: clevercloud/testcontainer-ceph:${{ matrix.version_name }}-${{ github.event.release.tag_name }}
           cache-from: type=local,src=/tmp/.buildx-cache
           cache-to: type=local,dest=/tmp/.buildx-cache-new,mode=max
