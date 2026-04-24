@@ -52,14 +52,11 @@ EXPOSE 7480
 EXPOSE 8080
 
 COPY ./patches /patches
-# Apply common patches, then the version-specific ones (reef/ or pacific/).
 RUN set -e; \
-    for d in /patches/common /patches/${VERSION_NAME}; do \
-      for p in "$d"/*.patch; do \
-        [ -e "$p" ] || continue; \
-        echo "Applying $p"; \
-        patch -p5 -d /usr/share/ceph/mgr/dashboard < "$p"; \
-      done; \
+    for p in /patches/${VERSION_NAME}/*.patch; do \
+      [ -e "$p" ] || continue; \
+      echo "Applying $p"; \
+      patch -p5 -d /usr/share/ceph/mgr/dashboard < "$p"; \
     done
 
 COPY ./entrypoint.sh /entrypoint
