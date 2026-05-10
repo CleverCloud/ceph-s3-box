@@ -15,11 +15,14 @@ DELETE /<resource_id>, so no routing changes are needed.
 
 Also introduces the `_run_auth_command` helper (mirroring Reef) so the
 try/except SendCommandError -> DashboardException mapping is shared
-between user_create and user_delete.
+across user_list, user_create, and user_delete. Without this,
+`auth ls` racing right after `auth del` lets a transient
+SendCommandError leak unwrapped, and CherryPy serves a generic
+500 instead of a structured DashboardException.
 ---
  src/pybind/mgr/dashboard/controllers/_crud.py      |  7 +++++++
- src/pybind/mgr/dashboard/controllers/ceph_users.py | 27 ++++++++++++++++------
- 2 files changed, 27 insertions(+), 7 deletions(-)
+ src/pybind/mgr/dashboard/controllers/ceph_users.py | 33 ++++++++++++++++++----
+ 2 files changed, 32 insertions(+), 8 deletions(-)
 
 --- a/src/pybind/mgr/dashboard/controllers/_crud.py
 +++ b/src/pybind/mgr/dashboard/controllers/_crud.py
@@ -46,10 +49,11 @@ between user_create and user_delete.
      def create_meta_class(self, cls):
 --- a/src/pybind/mgr/dashboard/controllers/ceph_users.py
 +++ b/src/pybind/mgr/dashboard/controllers/ceph_users.py
-@@ -25,6 +25,15 @@
+@@ -24,12 +24,21 @@ class Cap(NamedTuple):
+
 
  class CephUserEndpoints:
-     @staticmethod
++    @staticmethod
 +    def _run_auth_command(command: str, **kwargs):
 +        try:
 +            return CephService.send_command('mon', command, **kwargs)
@@ -58,11 +62,17 @@ between user_create and user_delete.
 +            code = 400 if ex.errno == -EINVAL else 500
 +            raise DashboardException(msg, code=code)
 +
-+    @staticmethod
+     @staticmethod
      def user_list(_):
          """
          Get list of ceph users and its respective data
-@@ -47,13 +56,17 @@
+         """
+-        return CephService.send_command('mon', 'auth ls')["auth_dump"]
++        return CephUserEndpoints._run_auth_command('auth ls')["auth_dump"]
+
+     @staticmethod
+     def user_create(_, user_entity: str, capabilities: List[Cap]):
+@@ -47,13 +56,17 @@ class CephUserEndpoints:
 
          logger.debug("Sending command 'auth get-or-create' of entity '%s' with caps '%s'",
                       user_entity, str(caps))
@@ -87,7 +97,7 @@ between user_create and user_delete.
 
 
  create_cap_container = ArrayHorizontalContainer('Capabilities', 'capabilities',
-@@ -91,6 +104,10 @@
+@@ -91,6 +104,10 @@ create_form = Form(path='/cluster/user/create',
      create=CRUDCollectionMethod(
          func=CephUserEndpoints.user_create,
          doc=EndpointDoc("Create Ceph User")
