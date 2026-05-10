@@ -1,0 +1,37 @@
+Upstream: No, removes a debug print left in PR #47794 that the cluster-api backport carried over.
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Clever Cloud <noreply@clever-cloud.com>
+Date: Sun, 10 May 2026 00:00:00 +0000
+Subject: [PATCH] mgr/dashboard: drop debug print(o, expected_type) in _crud.serialize
+
+PR #47794 ships _crud.serialize() with a stray `print(o, expected_type)`
+left from authoring. Reef upstream has since removed it; Pacific never
+shipped _crud.py at all so we inherit the debug line via our backport
+(0002-add-cluster-api.patch).
+
+Inside the MGR daemon, sys.stdout's underlying fd is closed during
+detachment. Threads that miss the redirect raise `OSError: [Errno 9]
+Bad file descriptor` from `print` whenever the dynamic CRUDClass.list
+serializes a NamedTuple — i.e. on every GET /api/cluster/user that
+returns at least one row. Some CherryPy worker threads happen to have
+a still-valid fd, which is why the failure looks like a flake (~50% of
+GETs serve 500 with the unstructured CherryPy default body). It has
+nothing to do with eventual consistency on auth ls.
+
+Removing the print fixes the GET handler outright and lets the
+upstream-style structured response reach clients.
+---
+ src/pybind/mgr/dashboard/controllers/_crud.py | 1 -
+ 1 file changed, 1 deletion(-)
+
+--- a/src/pybind/mgr/dashboard/controllers/_crud.py
++++ b/src/pybind/mgr/dashboard/controllers/_crud.py
+@@ -21,6 +21,5 @@ def isnamedtuple(o):
+ def serialize(o, expected_type=None):
+     # pylint: disable=R1705,W1116
+-    print(o, expected_type)
+     if isnamedtuple(o):
+         hints = get_type_hints(o)
+         return {k: serialize(v, hints[k]) for k, v in zip(o._fields, o)}
+--
+2.48.1
